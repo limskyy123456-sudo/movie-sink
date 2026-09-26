@@ -1,0 +1,1318 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>싱크뷰 · 영상 동시 시청</title>
+<meta name="description" content="여러 영상을 한 화면에서 싱크 맞춰 동시에 보는 플레이어">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EEF0F4; --panel:#FFFFFF; --panel2:#F4F5F8; --line:#DDE1E8; --text:#1C1F26; --muted:#6A7282;
+  --accent:#B7791F; --accent-soft:rgba(183,121,31,.12); --accent-ink:#FFFFFF; --screen:#0A0C10; --danger:#C2413A;
+  --r:12px;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#15171C; --panel:#1F2229; --panel2:#191C22; --line:#2E333D; --text:#E8EAEF; --muted:#8A91A0;
+    --accent:#F5B83D; --accent-soft:rgba(245,184,61,.14); --accent-ink:#1B1600; --screen:#000; --danger:#F07167;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#15171C; --panel:#1F2229; --panel2:#191C22; --line:#2E333D; --text:#E8EAEF; --muted:#8A91A0;
+  --accent:#F5B83D; --accent-soft:rgba(245,184,61,.14); --accent-ink:#1B1600; --screen:#000; --danger:#F07167;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%; scroll-padding-top:calc(env(safe-area-inset-top,0px) + 64px)}
+body{margin:0; min-height:100%; background:var(--bg); color:var(--text);
+  font-family:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  font-size:15px; line-height:1.55; font-variant-numeric:tabular-nums; -webkit-font-smoothing:antialiased; word-break:keep-all}
+button,input{font:inherit; color:inherit}
+button{cursor:pointer; background:none; border:0; padding:0}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:6px}
+input[type=range]{accent-color:var(--accent)}
+[hidden]{display:none !important}
+
+/* App bar */
+.appbar{position:sticky; top:env(safe-area-inset-top,0px); z-index:20; background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border-bottom:1px solid var(--line)}
+.appbar-in{max-width:1400px; margin:0 auto; height:56px; padding:0 clamp(14px,2.4vw,28px); display:flex; align-items:center; gap:10px}
+.brand{display:flex; align-items:center; gap:9px; font-weight:700; font-size:17px; letter-spacing:-.02em; color:var(--text); text-decoration:none}
+.brand-mark{width:26px; height:26px; border-radius:8px; background:var(--accent); display:grid; place-items:center}
+.brand-mark svg{width:14px; height:14px; color:var(--accent-ink)}
+.spacer{flex:1}
+.tbtn{text-decoration:none; height:36px; padding:0 14px; border-radius:10px; border:1px solid var(--line); background:var(--panel); font-weight:500; font-size:14px; display:inline-flex; align-items:center; gap:6px; white-space:nowrap}
+.tbtn:hover{border-color:var(--accent)}
+.tbtn.primary{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
+.tbtn.on{background:var(--accent-soft); border-color:var(--accent); color:var(--text)}
+
+.page{max-width:1400px; margin:0 auto; padding:20px clamp(14px,2.4vw,28px) 32px}
+
+/* Home */
+.hero{padding:clamp(28px,7vw,72px) 0 clamp(24px,4vw,40px); display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); gap:clamp(20px,4vw,56px); align-items:center}
+.hero h1{font-size:clamp(30px,5vw,50px); line-height:1.15; letter-spacing:-.035em; font-weight:700; margin:0 0 14px}
+.hero p{color:var(--muted); font-size:16.5px; margin:0 0 26px; max-width:40ch}
+.hero .tbtn{height:46px; padding:0 22px; font-size:15.5px}
+.demo{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:14px; display:grid; gap:10px}
+.demo-screens{display:grid; grid-template-columns:2.2fr 1fr; gap:8px}
+.demo-main{aspect-ratio:16/9; border-radius:10px; background:var(--screen); position:relative; overflow:hidden}
+.demo-side{display:grid; gap:8px}
+.demo-side div{border-radius:8px; background:var(--screen); position:relative; overflow:hidden}
+.demo-main::before,.demo-side div::before{content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--c)}
+.demo-lane{display:grid; grid-template-columns:44px 1fr; gap:8px; align-items:center; font-size:11.5px; color:var(--muted)}
+.demo-track{height:7px; border-radius:4px; background:var(--panel2); position:relative}
+.demo-track i{position:absolute; top:0; bottom:0; border-radius:4px; background:var(--c)}
+.demo-head{position:absolute; top:-5px; bottom:-5px; width:2px; background:var(--text); left:46%}
+@media (prefers-reduced-motion: no-preference){
+  .demo-head{animation:sweep 9s linear infinite}
+  @keyframes sweep{from{left:0} to{left:100%}}
+}
+
+.section{margin-top:28px}
+.section h2{font-size:18px; font-weight:600; letter-spacing:-.015em; margin:0 0 12px}
+.sets{display:grid; gap:8px}
+.set{display:flex; align-items:center; gap:12px; background:var(--panel); border:1px solid var(--line); border-radius:var(--r); padding:12px 14px}
+.set-info{flex:1; min-width:0}
+.set-title{font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.set-meta{font-size:13px; color:var(--muted)}
+.set .tbtn{height:32px; padding:0 12px}
+.link-del{color:var(--muted); font-size:13px; padding:6px}
+.link-del:hover{color:var(--danger)}
+.muted-box{color:var(--muted); font-size:14px; background:var(--panel); border:1px dashed var(--line); border-radius:var(--r); padding:14px}
+
+.acc{background:var(--panel); border:1px solid var(--line); border-radius:var(--r); overflow:hidden}
+.acc + .acc{margin-top:8px}
+.acc summary{list-style:none; cursor:pointer; padding:14px 16px; font-weight:600; display:flex; align-items:center; gap:10px}
+.acc summary::-webkit-details-marker{display:none}
+.acc summary::after{content:""; margin-left:auto; width:8px; height:8px; border-right:2px solid var(--muted); border-bottom:2px solid var(--muted); transform:rotate(45deg); transition:transform .2s}
+.acc[open] summary::after{transform:rotate(-135deg)}
+.acc-body{padding:0 16px 16px; color:var(--text); max-width:76ch}
+.acc-body ol,.acc-body ul{margin:0; padding-left:20px}
+.acc-body li{margin:5px 0}
+.acc-body p{margin:8px 0 0; color:var(--muted); font-size:14px}
+kbd{font-family:inherit; font-size:12.5px; background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px; border-radius:6px; padding:1px 7px}
+.foot{margin-top:40px; color:var(--muted); font-size:13px}
+
+/* Watch */
+.stage{display:grid; grid-template-columns:minmax(0,1fr) clamp(200px,22vw,320px); gap:10px; align-items:start}
+.stage.solo{grid-template-columns:minmax(0,1fr)}
+.main-slot,.side-slot{min-width:0}
+.side-slot{display:grid; gap:10px; align-content:start}
+.tile{position:relative; aspect-ratio:16/9; background:var(--screen); border-radius:10px; overflow:hidden; cursor:pointer}
+.tile.is-main{border-radius:14px; cursor:default}
+.tile video{position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block}
+.tile::before{content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--c); z-index:2}
+.cap{position:absolute; left:0; right:0; bottom:0; display:flex; align-items:center; gap:6px; padding:18px 10px 7px 12px;
+  background:linear-gradient(transparent, rgba(0,0,0,.6)); color:#fff; font-size:12.5px; pointer-events:none}
+.cap-name{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; min-width:0}
+.cap-status{background:rgba(0,0,0,.55); border-radius:5px; padding:1px 7px; font-size:11.5px; flex:none}
+.cap-status:empty{display:none}
+.tile.is-main .cap{font-size:13.5px; padding:24px 14px 10px 16px}
+.tile:not(.is-main):hover::after{content:"메인으로"; position:absolute; top:8px; right:8px; background:rgba(0,0,0,.6); color:#fff; font-size:12px; padding:2px 8px; border-radius:6px}
+
+.empty{border:2px dashed var(--line); border-radius:16px; min-height:min(52vh,460px); display:grid; place-items:center; text-align:center; padding:28px}
+.empty h2{font-size:20px; margin:0 0 6px; letter-spacing:-.02em}
+.empty p{margin:0 0 18px; color:var(--muted)}
+body.drag .empty, body.drag .stage{outline:2px dashed var(--accent); outline-offset:6px; border-radius:16px}
+
+/* Tracks */
+.tracks{margin-top:14px; background:var(--panel); border:1px solid var(--line); border-radius:14px}
+.tracks-head{display:flex; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid var(--line)}
+.tracks-head h2{font-size:15px; font-weight:600; margin:0}
+.tracks-head .note{font-size:13px; color:var(--muted)}
+.trk{padding:10px 14px; border-top:1px solid var(--line); display:grid; grid-template-columns:minmax(120px,190px) auto auto 1fr auto; gap:6px 16px; align-items:center}
+.trk:first-of-type{border-top:0}
+.trk-name{display:flex; align-items:center; gap:8px; min-width:0}
+.dot{width:10px; height:10px; border-radius:50%; background:var(--c); flex:none}
+.trk-name span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; font-size:14px; cursor:text}
+.pill{font-size:11.5px; border-radius:999px; padding:1px 8px; flex:none; border:1px solid var(--line); color:var(--muted); white-space:nowrap}
+.pill.main{background:var(--accent-soft); border-color:transparent; color:var(--text)}
+button.pill:hover{border-color:var(--accent); color:var(--text)}
+.grp{display:flex; align-items:center; gap:3px}
+.ib{height:28px; min-width:30px; padding:0 7px; white-space:nowrap; border-radius:7px; font-size:12.5px; color:var(--muted); border:1px solid transparent}
+.ib:hover{background:var(--panel2); color:var(--text); border-color:var(--line)}
+.ib.on{color:var(--danger)}
+.off{width:66px; height:28px; border:1px solid var(--line); background:var(--panel2); border-radius:7px; padding:0 6px; font-size:13px; text-align:right}
+.off-unit{font-size:12.5px; color:var(--muted); margin:0 2px 0 1px}
+.vol{width:90px}
+.lane{position:relative; height:28px; display:flex; align-items:center; min-width:80px}
+.track{position:relative; width:100%; height:8px; border-radius:4px; background:var(--panel2)}
+.bar{position:absolute; top:0; bottom:0; border-radius:4px; background:var(--c); opacity:.9}
+.head{position:absolute; top:-5px; bottom:-5px; width:2px; background:var(--text); left:0; pointer-events:none}
+.scrub{display:none; width:100%; margin:0; accent-color:var(--c)}
+body.syncing .scrub{display:block}
+body.syncing .track{display:none}
+.del{color:var(--muted); width:28px; height:28px; border-radius:7px; font-size:14px}
+.del:hover{color:var(--danger); background:var(--panel2)}
+.sync-hint{display:none; padding:10px 14px; font-size:13.5px; background:var(--accent-soft); border-top:1px solid var(--line); border-radius:0 0 14px 14px}
+body.syncing .sync-hint{display:block}
+
+/* Transport */
+.transport{position:sticky; bottom:calc(env(safe-area-inset-bottom,0px) + 10px); z-index:10; margin-top:14px; background:var(--panel);
+  border:1px solid var(--line); border-radius:16px; padding:10px 14px 12px; box-shadow:0 8px 30px rgba(0,0,0,.14)}
+.tp-row{display:flex; align-items:center; gap:8px}
+.play{width:44px; height:44px; border-radius:50%; background:var(--accent); color:var(--accent-ink); display:grid; place-items:center; flex:none}
+.play svg{width:18px; height:18px}
+.play:disabled{opacity:.4; cursor:default}
+.time{font-size:14px; margin-left:6px; white-space:nowrap}
+.time b{font-weight:600}
+.time span{color:var(--muted)}
+.mvol{display:flex; align-items:center; gap:4px}
+.mvol input{width:100px}
+.seek{width:100%; margin:8px 0 0; display:block}
+
+/* Record mode */
+.stage.offstage{position:fixed; left:0; top:0; width:480px; opacity:0; pointer-events:none; z-index:-1}
+.recmode{display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:12px; align-items:start}
+.rec-preview{position:sticky; top:calc(env(safe-area-inset-top,0px) + 68px); background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; display:grid; place-items:center;
+  background-image:repeating-conic-gradient(var(--panel2) 0 25%, transparent 0 50%); background-size:18px 18px}
+.rec-preview canvas{display:block; max-width:100%; max-height:66vh; width:auto; height:auto; border-radius:4px; touch-action:none; box-shadow:0 6px 24px rgba(0,0,0,.25)}
+.rec-badge{position:absolute; top:22px; left:22px; background:#E5484D; color:#fff; font-size:13px; font-weight:600; padding:3px 10px; border-radius:999px}
+.rec-help{grid-column:1 / -1; margin:0; font-size:13px; color:var(--muted)}
+.rec-panel{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:4px 14px}
+.rp-sec{padding:12px 0; border-top:1px solid var(--line)}
+.rp-sec:first-child{border-top:0}
+.rp-sec h3{margin:0 0 8px; font-size:13px; font-weight:600; color:var(--muted)}
+.seg{display:grid; grid-template-columns:1fr 1fr; gap:6px}
+.seg button{border:1px solid var(--line); border-radius:9px; padding:6px 9px; font-size:13.5px; background:var(--panel2); text-align:left; line-height:1.35}
+.seg button small{display:block; font-size:11.5px; color:var(--muted)}
+.seg button:hover{border-color:var(--accent)}
+.seg button.on{border-color:var(--accent); background:var(--accent-soft)}
+.rl-row{display:flex; align-items:center; gap:8px; padding:5px 6px; border-radius:8px; cursor:pointer}
+.rl-row:hover{background:var(--panel2)}
+.rl-row.sel{background:var(--accent-soft)}
+.rl-row .nm{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px}
+.rl-row input{accent-color:var(--accent); width:16px; height:16px; margin:0}
+.opt{display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:14px; margin-top:8px}
+.opt input[type=checkbox]{accent-color:var(--accent); width:17px; height:17px; margin:0}
+.opt input[type=color]{width:40px; height:28px; border:1px solid var(--line); border-radius:7px; background:var(--panel2); padding:2px}
+.rec-go{width:100%; height:46px; border-radius:11px; background:#E5484D; color:#fff; font-weight:600; font-size:15.5px; margin-top:10px}
+.rec-go:hover{filter:brightness(1.07)}
+.rec-go.stop{background:var(--text); color:var(--bg)}
+.rp-note{margin:8px 0 0; font-size:12.5px; color:var(--muted)}
+.res-video{width:100%; max-height:52vh; background:#000; border-radius:10px; display:block}
+.res-meta{margin:8px 0 0; font-size:13.5px; color:var(--muted)}
+.dlg-foot{gap:8px}
+
+/* Dialog */
+dialog{border:1px solid var(--line); border-radius:18px; background:var(--panel); color:var(--text); padding:0; width:min(560px, calc(100vw - 28px)); max-height:calc(100dvh - 40px)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+.dlg-in{padding:20px}
+.dlg-in h2{margin:0 0 4px; font-size:19px; letter-spacing:-.02em}
+.dlg-in > p{margin:0 0 16px; color:var(--muted); font-size:14px}
+.field{display:flex; gap:8px}
+.field input{flex:1; min-width:0; height:42px; border:1px solid var(--line); background:var(--panel2); border-radius:10px; padding:0 12px; outline:none}
+.field input:focus{border-color:var(--accent)}
+.field .tbtn{height:42px}
+.or{display:flex; align-items:center; gap:10px; color:var(--muted); font-size:13px; margin:14px 0}
+.or::before,.or::after{content:""; flex:1; height:1px; background:var(--line)}
+.drop{border:1.5px dashed var(--line); border-radius:12px; padding:18px; text-align:center; color:var(--muted); font-size:14px}
+.drop .tbtn{margin-top:8px}
+.dlg-in .acc{margin-top:14px; background:var(--panel2)}
+.dlg-foot{display:flex; justify-content:flex-end; margin-top:16px}
+
+.toast{position:fixed; left:50%; bottom:calc(140px + env(safe-area-inset-bottom,0px)); transform:translateX(-50%); z-index:50; background:var(--text); color:var(--bg);
+  padding:9px 16px; border-radius:10px; font-size:14px; max-width:min(92vw,560px); opacity:0; pointer-events:none; transition:opacity .2s}
+.toast.show{opacity:1}
+
+@media (max-width:980px){
+  .recmode{grid-template-columns:1fr}
+  .rec-preview{position:relative; top:0}
+  .trk{grid-template-columns:1fr auto; }
+  .trk-name{grid-column:1}
+  .trk .del{grid-column:2; grid-row:1}
+  .trk .grp.sync{grid-column:1 / -1}
+  .trk .grp.v{grid-column:1 / -1}
+  .trk .lane{grid-column:1 / -1}
+  .vol{flex:1; width:auto}
+}
+@media (max-width:760px){
+  .hero{grid-template-columns:1fr}
+  .stage{grid-template-columns:1fr}
+  .side-slot{grid-template-columns:1fr 1fr}
+  .appbar .tbtn .lbl-long{display:none}
+  .mvol input{width:70px}
+  .tp-row .skip10{display:none}
+}
+@media (prefers-reduced-motion: reduce){ .toast,.acc summary::after{transition:none} }
+</style>
+</head>
+<body>
+<header class="appbar">
+  <div class="appbar-in">
+    <a class="brand" href="#/">
+      <span class="brand-mark"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="5" width="13" height="14" rx="2"/><rect x="17" y="5" width="5" height="6" rx="1.2"/><rect x="17" y="13" width="5" height="6" rx="1.2"/></svg></span>
+      싱크뷰
+    </a>
+    <div class="spacer"></div>
+    <div id="watchActions" hidden style="display:flex; gap:8px">
+      <button class="tbtn" id="recBtn">● 녹화</button>
+      <button class="tbtn" id="saveSet">세트 저장</button>
+      <button class="tbtn primary" id="openAdd">＋ 영상 추가</button>
+    </div>
+    <a class="tbtn primary" id="goWatch" href="#/watch">시청 화면</a>
+  </div>
+</header>
+
+<!-- HOME -->
+<main class="page" id="home">
+  <section class="hero">
+    <div>
+      <h1>여러 영상을<br>같은 순간으로 맞춰 보기</h1>
+      <p>치지직 다시보기나 내 영상 파일을 한 화면에 모아, 싱크를 맞춘 뒤 재생 버튼 하나로 함께 보고, 원하는 배치로 녹화해 영상 하나로 저장합니다.</p>
+      <a class="tbtn primary" href="#/watch">시청 시작하기</a>
+    </div>
+    <div class="demo" aria-hidden="true">
+      <div class="demo-screens">
+        <div class="demo-main" style="--c:#F5B83D"></div>
+        <div class="demo-side"><div style="--c:#5CC8E8"></div><div style="--c:#E77FB3"></div></div>
+      </div>
+      <div style="position:relative; display:grid; gap:6px">
+        <div class="demo-lane"><span>메인</span><div class="demo-track"><i style="--c:#F5B83D; left:0; width:88%"></i></div></div>
+        <div class="demo-lane"><span>2번</span><div class="demo-track"><i style="--c:#5CC8E8; left:12%; width:80%"></i></div></div>
+        <div class="demo-lane"><span>3번</span><div class="demo-track"><i style="--c:#E77FB3; left:4%; width:96%"></i><div class="demo-head"></div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>저장한 세트</h2>
+    <div class="sets" id="sets"></div>
+  </section>
+
+  <section class="section">
+    <h2>사용 안내</h2>
+    <details class="acc" open>
+      <summary>처음 사용하는 순서</summary>
+      <div class="acc-body">
+        <ol>
+          <li>시청 화면에서 <b>영상 추가</b>를 눌러 주소나 파일을 넣습니다. 처음 넣은 영상이 큰 메인 화면이 돼요.</li>
+          <li><b>싱크 맞추기</b>를 켜고 영상마다 같은 장면(예: 곡이 시작하는 순간)을 찾아 둡니다.</li>
+          <li>아래 재생 버튼을 누르면 모든 영상이 맞춘 위치 관계대로 함께 재생돼요.</li>
+          <li>자주 보는 조합은 <b>세트 저장</b>으로 남겨 두면 다음에 바로 불러올 수 있습니다.</li>
+          <li>맞춘 결과를 영상 하나로 남기고 싶으면 <b>녹화</b>에서 배치를 정하고 녹화하면 돼요.</li>
+        </ol>
+      </div>
+    </details>
+    <details class="acc">
+      <summary>치지직 다시보기 넣는 법</summary>
+      <div class="acc-body">
+        <ol>
+          <li>치지직은 외부 재생용 플레이어가 없어서 다시보기 페이지 주소(chzzk.naver.com/video/…)는 쓸 수 없어요.</li>
+          <li>크롬 확장 프로그램 등으로 다시보기의 <b>m3u8 링크</b>를 원하는 화질로 복사합니다.</li>
+          <li>영상 추가 창에 붙여넣으면 됩니다. m3u8(HLS)과 mpd(DASH) 주소를 모두 지원해요.</li>
+        </ol>
+        <p>스트림 주소는 시간이 지나면 만료될 수 있어요. 저장한 세트가 열리지 않으면 주소를 새로 복사해 넣으세요.</p>
+      </div>
+    </details>
+    <details class="acc">
+      <summary>싱크 맞추는 법</summary>
+      <div class="acc-body">
+        <ul>
+          <li><b>싱크 맞추기</b>를 켜면 트랙마다 개별 슬라이더가 생겨요. 영상 하나씩 같은 장면으로 옮겨 두세요.</li>
+          <li>미세 조정은 트랙의 ±0.1초, ±1초 버튼이나 숫자 칸으로 합니다. 값이 클수록 그 영상이 앞서 나가요.</li>
+          <li>재생 중에 어긋남이 생기면 자동으로 다시 맞추고, 한 영상이 버퍼링하면 모두 잠깐 기다렸다 함께 재생합니다.</li>
+        </ul>
+      </div>
+    </details>
+    <details class="acc">
+      <summary>녹화해서 영상 하나로 저장하기</summary>
+      <div class="acc-body">
+        <ol>
+          <li>시청 화면 위쪽의 <b>녹화</b>를 누르면 녹화 화면 미리보기가 열려요.</li>
+          <li>화면 크기(가로·세로·정사각)와 배치를 고르고, 미리보기에서 영상을 끌어 위치와 크기를 원하는 대로 바꿉니다.</li>
+          <li><b>녹화 시작</b>을 누르면 싱크가 맞은 상태로 재생되면서 녹화돼요. 일시정지하면 녹화도 멈추고, 버퍼링 구간은 녹화에서 빠집니다.</li>
+          <li>끝나면 미리 보고 다운로드합니다. 크롬·엣지 최신 버전은 mp4, 그 밖에는 webm 파일로 저장돼요.</li>
+        </ol>
+        <p>녹화는 실제 재생 속도로 진행돼서 1시간 영상은 1시간이 걸려요. 녹화 중 다른 탭으로 옮기면 화면이 멈춘 채 녹화될 수 있어요.</p>
+      </div>
+    </details>
+    <details class="acc">
+      <summary>단축키</summary>
+      <div class="acc-body">
+        <ul>
+          <li><kbd>Space</kbd> 재생 / 일시정지</li>
+          <li><kbd>←</kbd> <kbd>→</kbd> 5초 이동</li>
+          <li><kbd>1</kbd>~<kbd>9</kbd> 해당 번호 영상을 메인 화면으로</li>
+          <li><kbd>S</kbd> 싱크 맞추기 켜기 / 끄기</li>
+        </ul>
+      </div>
+    </details>
+  </section>
+  <p class="foot">영상은 이 브라우저 안에서만 재생되며 어디에도 업로드되지 않습니다. 세트에는 주소와 싱크 값만 저장돼요.</p>
+</main>
+
+<!-- WATCH -->
+<main class="page" id="watch" hidden>
+  <div class="empty" id="empty">
+    <div>
+      <h2>아직 영상이 없어요</h2>
+      <p>주소나 파일을 추가하세요. 파일은 이 화면에 끌어다 놓아도 됩니다.</p>
+      <button class="tbtn primary" id="emptyAdd">＋ 영상 추가</button>
+    </div>
+  </div>
+  <div class="stage" id="stage" hidden><div class="main-slot" id="mainSlot"></div><div class="side-slot" id="sideSlot"></div></div>
+
+  <section class="recmode" id="recMode" hidden>
+    <div class="rec-preview">
+      <canvas id="preview" width="1280" height="720" aria-label="녹화 화면 미리보기"></canvas>
+      <div class="rec-badge" id="recBadge" hidden>● 녹화 중 <span id="recTime">0:00</span></div>
+    </div>
+    <aside class="rec-panel">
+      <div class="rp-sec">
+        <h3>화면 크기</h3>
+        <div class="seg" id="resSeg">
+          <button data-res="1920x1080">가로 FHD<small>1920×1080</small></button>
+          <button data-res="1280x720">가로 HD<small>1280×720</small></button>
+          <button data-res="1080x1920">세로<small>1080×1920</small></button>
+          <button data-res="1080x1080">정사각<small>1080×1080</small></button>
+        </div>
+      </div>
+      <div class="rp-sec">
+        <h3>배치</h3>
+        <div class="seg" id="layoutSeg">
+          <button data-layout="side">메인 + 옆</button>
+          <button data-layout="bottom">메인 + 아래</button>
+          <button data-layout="grid">격자</button>
+          <button data-layout="pip">화면 속 화면</button>
+        </div>
+        <p class="rp-note">미리보기에서 영상을 끌어 옮기고, 오른쪽 아래 모서리를 끌어 크기를 바꿀 수 있어요. Shift를 누른 채 끌면 비율 제한 없이 조절됩니다.</p>
+      </div>
+      <div class="rp-sec">
+        <h3>영상 (체크한 것만 녹화)</h3>
+        <div id="recList"></div>
+      </div>
+      <div class="rp-sec">
+        <h3>꾸미기</h3>
+        <div class="seg" id="fitSeg">
+          <button data-fit="contain">여백 두기<small>영상 전체가 보임</small></button>
+          <button data-fit="cover">꽉 채우기<small>가장자리가 잘림</small></button>
+        </div>
+        <label class="opt">영상 이름 표시 <input type="checkbox" id="optLabels"></label>
+        <label class="opt">배경색 <input type="color" id="optBg" value="#000000"></label>
+      </div>
+      <div class="rp-sec">
+        <h3>녹화</h3>
+        <div class="seg" id="fromSeg">
+          <button data-from="now">지금 위치부터</button>
+          <button data-from="start">처음부터</button>
+        </div>
+        <button class="rec-go" id="recGo">● 녹화 시작</button>
+        <p class="rp-note">실제 재생 시간만큼 녹화되며, 끝까지 가거나 녹화 끝내기를 누르면 파일이 만들어져요. 녹화 중에는 이 탭을 계속 앞에 띄워 두세요. 소리는 트랙별 볼륨대로 담기고, 전체 볼륨은 내 스피커에만 적용됩니다.</p>
+      </div>
+    </aside>
+  </section>
+
+  <section class="tracks" id="tracks" hidden>
+    <div class="tracks-head">
+      <h2>트랙</h2>
+      <span class="note" id="trackNote"></span>
+      <div class="spacer"></div>
+      <button class="tbtn" id="syncBtn">싱크 맞추기</button>
+    </div>
+    <div id="trackList"></div>
+    <div class="sync-hint">영상마다 슬라이더로 같은 장면을 찾아 두고 재생을 누르세요. 재생하면 싱크 맞추기가 자동으로 꺼집니다.</div>
+  </section>
+
+  <div class="transport" id="transport" hidden>
+    <div class="tp-row">
+      <button class="play" id="play" aria-label="재생"></button>
+      <button class="ib skip10" data-skip="-10">−10초</button>
+      <button class="ib" data-skip="-1">−1초</button>
+      <button class="ib" data-skip="1">+1초</button>
+      <button class="ib skip10" data-skip="10">+10초</button>
+      <div class="time"><b id="cur">0:00</b> <span>/ <span id="tot">0:00</span></span></div>
+      <div class="spacer"></div>
+      <div class="mvol">
+        <button class="ib" id="mmute" aria-label="전체 음소거">🔊</button>
+        <input id="mvol" type="range" min="0" max="100" value="100" aria-label="전체 볼륨">
+      </div>
+    </div>
+    <input class="seek" id="seek" type="range" min="0" max="0" step="0.01" value="0" aria-label="전체 재생 위치">
+  </div>
+</main>
+
+<dialog id="addDlg">
+  <div class="dlg-in">
+    <h2>영상 추가</h2>
+    <p>주소를 붙여넣거나 내 파일을 고르세요. 여러 개를 계속 추가할 수 있어요.</p>
+    <div class="field">
+      <input id="url" type="url" placeholder="치지직 m3u8, mp4 등 영상 주소" aria-label="영상 주소" autocomplete="off">
+      <button class="tbtn primary" id="addUrl">추가</button>
+    </div>
+    <div class="or">또는</div>
+    <div class="drop" id="drop">
+      파일을 여기로 끌어다 놓거나<br>
+      <button class="tbtn" id="pick">파일 고르기</button>
+      <input id="file" type="file" accept="video/*,audio/*" multiple hidden>
+    </div>
+    <details class="acc" id="chzzkHelp">
+      <summary>치지직 다시보기 주소는 어떻게 넣나요?</summary>
+      <div class="acc-body">
+        <p style="margin-top:0; color:var(--text)">다시보기 페이지 주소 대신, 확장 프로그램 등으로 복사한 <b>m3u8 스트림 주소</b>를 붙여넣으세요. 주소가 만료되면 새로 복사해야 해요.</p>
+      </div>
+    </details>
+    <div class="dlg-foot"><button class="tbtn" id="closeAdd">닫기</button></div>
+  </div>
+</dialog>
+
+<dialog id="resDlg">
+  <div class="dlg-in">
+    <h2>녹화 완료</h2>
+    <p>재생해서 확인한 뒤 저장하세요. 창을 닫으면 녹화본은 사라져요.</p>
+    <video class="res-video" id="resVideo" controls playsinline></video>
+    <p class="res-meta" id="resMeta"></p>
+    <div class="dlg-foot">
+      <button class="tbtn" id="resClose">닫기</button>
+      <button class="tbtn primary" id="resSave">다운로드</button>
+    </div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const stage = $('#stage'), trackList = $('#trackList'), seek = $('#seek'), playBtn = $('#play'), dlg = $('#addDlg');
+const COLORS = ['#F5B83D','#5CC8E8','#E77FB3','#8FD46A','#A98BF0','#F08A5D','#4FD1B0','#D6D86A'];
+const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>';
+const ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4.5v16H6zM13.5 4H18v16h-4.5z"/></svg>';
+const HLS_URL = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js';
+const DASH_URL = 'https://cdn.jsdelivr.net/npm/dashjs@4.7.4/dist/dash.all.min.js';
+const SETS_KEY = 'syncview.sets.v1';
+const rec = { on:false, W:1920, H:1080, layout:'side', fit:'contain', labels:false, bg:'#000000', from:'now',
+  sel:null, z:[], custom:false, recorder:null, chunks:[], active:0, mime:null, blob:null, blobUrl:null, saved:false };
+const recCanvas = document.createElement('canvas'); const rctx = recCanvas.getContext('2d');
+const preview = $('#preview'); const pctx = preview.getContext('2d');
+let audio = null, dlCap = null;
+if (window.claude && typeof window.claude.use === 'function'){
+  window.claude.use('downloads').then(d => { dlCap = d; }).catch(() => {});
+}
+
+const players = [];
+let mainId = null, nextId = 1;
+let playing = false, stalled = false, baseT = 0, baseNow = 0;
+let masterVol = 1, masterMuted = false, syncMode = false, seeking = false;
+
+const now = () => performance.now();
+const mt = () => (playing && !stalled) ? baseT + (now() - baseNow) / 1000 : baseT;
+const setMT = t => { baseT = t; baseNow = now(); };
+
+function fmt(s){
+  s = Math.max(0, s || 0);
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = Math.floor(s % 60);
+  return h ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`;
+}
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 3400);
+}
+function span(){
+  let lo = 0, hi = 0, any = false;
+  for (const p of players){
+    if (!(p.dur > 0) || p.failed) continue;
+    const s = -p.offset, e = p.dur - p.offset;
+    if (!any){ lo = s; hi = e; any = true; } else { lo = Math.min(lo, s); hi = Math.max(hi, e); }
+  }
+  return { lo, hi };
+}
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ---------- script loading ---------- */
+const scriptCache = {};
+function loadScript(url){
+  return scriptCache[url] ||= new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = url; s.onload = res;
+    s.onerror = () => { delete scriptCache[url]; rej(new Error('script')); };
+    document.head.appendChild(s);
+  });
+}
+function kindOf(src, isFile){
+  if (isFile) return 'file';
+  const path = src.split('?')[0].toLowerCase();
+  if (path.endsWith('.m3u8') || /[?&](format|type)=m3u8/i.test(src)) return 'hls';
+  if (path.endsWith('.mpd')) return 'dash';
+  return 'direct';
+}
+
+/* ---------- players ---------- */
+function addSource(src, name, isFile, opts = {}){
+  const id = nextId++;
+  const color = COLORS[(id - 1) % COLORS.length];
+
+  const tile = document.createElement('div');
+  tile.className = 'tile'; tile.style.setProperty('--c', color);
+  tile.innerHTML = `<video playsinline preload="auto"></video>
+    <div class="cap"><span class="cap-name"></span><span class="cap-status"></span></div>`;
+
+  const row = document.createElement('div');
+  row.className = 'trk'; row.style.setProperty('--c', color);
+  row.innerHTML = `
+    <div class="trk-name"><i class="dot"></i><span title="더블클릭해서 이름 바꾸기"></span><button class="pill to-main">메인으로</button></div>
+    <div class="grp sync" aria-label="싱크">
+      <button class="ib" data-d="-1">−1</button><button class="ib" data-d="-0.1">−.1</button>
+      <input class="off" type="number" step="0.1" value="0.00" aria-label="싱크(초)"><span class="off-unit">초</span>
+      <button class="ib" data-d="0.1">+.1</button><button class="ib" data-d="1">+1</button>
+    </div>
+    <div class="grp v">
+      <button class="ib mute" aria-label="음소거">🔊</button>
+      <input class="vol" type="range" min="0" max="100" value="100" aria-label="볼륨">
+    </div>
+    <div class="lane">
+      <div class="track"><div class="bar"></div><div class="head"></div></div>
+      <input class="scrub" type="range" min="0" max="0" step="0.01" value="0" aria-label="이 영상만 이동">
+    </div>
+    <button class="del" aria-label="삭제">✕</button>`;
+
+  const p = {
+    id, name, src, isFile, color, tile, row,
+    offset: 0, vol: 1, muted: false, dur: 0, failed: false, rect: null, show: true, tainted: false, corsTry: false,
+    video: tile.querySelector('video'),
+    capName: tile.querySelector('.cap-name'), statusEl: tile.querySelector('.cap-status'),
+    nameEl: row.querySelector('.trk-name span'), pill: row.querySelector('.to-main'),
+    offEl: row.querySelector('.off'), volEl: row.querySelector('.vol'), muteEl: row.querySelector('.mute'),
+    bar: row.querySelector('.bar'), headEl: row.querySelector('.head'), scrubEl: row.querySelector('.scrub'),
+  };
+  setName(p, name);
+
+  const v = p.video;
+  v.addEventListener('loadedmetadata', () => {
+    p.dur = isFinite(v.duration) ? v.duration : 0;
+    p.scrubEl.max = p.dur;
+    if (!p.failed) p.statusEl.textContent = '';
+    if (!p.dur) toast(`"${p.name}"은 길이를 알 수 없어 싱크가 정확하지 않을 수 있어요.`);
+    syncOne(p, true);
+  });
+  v.addEventListener('error', () => {
+    if (p.corsTry){
+      p.corsTry = false; p.tainted = true;
+      v.removeAttribute('crossorigin'); v.src = p.src;
+      return;
+    }
+    fail(p, `"${p.name}"을 불러오지 못했어요. 주소가 영상을 직접 가리키는지, 만료되지 않았는지 확인하세요.`);
+  });
+
+  tile.addEventListener('click', () => { if (mainId !== id) setMain(id); });
+  p.pill.addEventListener('click', () => { if (mainId !== id) setMain(id); });
+  row.querySelector('.del').addEventListener('click', () => removePlayer(id));
+  row.querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', () => setOffset(p, p.offset + parseFloat(b.dataset.d))));
+  p.offEl.addEventListener('change', () => setOffset(p, parseFloat(p.offEl.value) || 0));
+  p.volEl.addEventListener('input', () => { p.vol = p.volEl.value / 100; applyVol(p); });
+  p.muteEl.addEventListener('click', () => { p.muted = !p.muted; applyVol(p); });
+  p.nameEl.addEventListener('dblclick', () => {
+    const n = prompt('영상 이름', p.name);
+    if (n && n.trim()) setName(p, n.trim());
+  });
+  p.scrubEl.addEventListener('input', () => {
+    if (playing) pause();
+    const t = parseFloat(p.scrubEl.value);
+    setOffset(p, t - mt(), true);
+    v.currentTime = t;
+  });
+
+  players.push(p);
+  $('#sideSlot').appendChild(tile);
+  trackList.appendChild(row);
+  if (opts.offset) setOffset(p, opts.offset, true);
+  if (opts.vol != null){ p.vol = opts.vol; p.volEl.value = Math.round(opts.vol * 100); }
+  if (opts.muted) p.muted = true;
+  if (opts.rect) p.rect = { ...opts.rect };
+  if (opts.show === false) p.show = false;
+  rec.z.push(id);
+  hookAudio(p);
+  applyVol(p);
+  if (mainId === null) mainId = id;
+  attachSource(p);
+  layout();
+  if (rec.on) onRecPlayersChanged(p);
+  return p;
+}
+
+function setName(p, name){
+  p.name = name;
+  p.capName.textContent = name; p.nameEl.textContent = name;
+}
+function fail(p, msg){
+  if (p.failed) return;
+  p.failed = true; p.statusEl.textContent = '불러오기 실패'; toast(msg);
+}
+
+async function attachSource(p){
+  const v = p.video, kind = kindOf(p.src, p.isFile);
+  const streamFail = () => fail(p, `"${p.name}" 스트림을 불러오지 못했어요. 주소가 만료됐거나 서버가 재생을 막고 있을 수 있어요.`);
+  try {
+    if (kind === 'hls'){
+      if (v.canPlayType('application/vnd.apple.mpegurl') && !window.MediaSource){ v.src = p.src; return; }
+      p.statusEl.textContent = '불러오는 중';
+      await loadScript(HLS_URL);
+      if (!window.Hls || !Hls.isSupported()){ v.src = p.src; return; }
+      const hls = new Hls({ maxBufferLength: 30 });
+      p.hls = hls;
+      hls.on(Hls.Events.ERROR, (_, d) => {
+        if (!d.fatal) return;
+        if (d.type === Hls.ErrorTypes.MEDIA_ERROR){ hls.recoverMediaError(); return; }
+        streamFail(); hls.destroy(); p.hls = null;
+      });
+      hls.loadSource(p.src); hls.attachMedia(v);
+    } else if (kind === 'dash'){
+      p.statusEl.textContent = '불러오는 중';
+      await loadScript(DASH_URL);
+      const dp = dashjs.MediaPlayer().create();
+      p.dash = dp;
+      dp.on(dashjs.MediaPlayer.events.ERROR, streamFail);
+      dp.initialize(v, p.src, false);
+    } else {
+      if (!p.isFile){ p.corsTry = true; v.crossOrigin = 'anonymous'; }
+      v.src = p.src;
+    }
+  } catch {
+    fail(p, '스트림 재생 도구를 불러오지 못했어요. 인터넷 연결을 확인하세요.');
+  }
+}
+
+function removePlayer(id){
+  const i = players.findIndex(p => p.id === id); if (i < 0) return;
+  const p = players[i];
+  if (p.hls) p.hls.destroy();
+  if (p.dash) p.dash.reset();
+  p.video.pause(); p.video.removeAttribute('src'); p.video.load();
+  if (p.isFile) URL.revokeObjectURL(p.src);
+  if (p.gain){ try { p.gain.disconnect(); } catch {} }
+  p.tile.remove(); p.row.remove(); players.splice(i, 1);
+  rec.z = rec.z.filter(z => z !== id);
+  if (rec.sel === id) rec.sel = null;
+  if (mainId === id) mainId = players[0] ? players[0].id : null;
+  if (!players.length){ playing = false; stalled = false; setMT(0); setSyncMode(false); updatePlayBtn(); if (!rec.recorder) setRecMode(false); }
+  layout();
+  if (rec.on) onRecPlayersChanged();
+}
+function clearAll(){ [...players].forEach(p => removePlayer(p.id)); nextId = 1; }
+
+function setMain(id){ mainId = id; layout(); }
+
+function layout(){
+  const n = players.length;
+  players.forEach((p, i) => {
+    const isMain = p.id === mainId;
+    p.tile.classList.toggle('is-main', isMain);
+    p.pill.textContent = isMain ? '메인' : '메인으로';
+    p.pill.classList.toggle('main', isMain);
+    p.pill.disabled = isMain;
+    p.pill.title = isMain ? '' : `메인 화면으로 (${i + 1})`;
+  });
+  const mainSlot = $('#mainSlot'), sideSlot = $('#sideSlot');
+  let moved = false;
+  const mp = players.find(p => p.id === mainId);
+  if (mp && mp.tile.parentNode !== mainSlot){ mainSlot.appendChild(mp.tile); moved = true; }
+  const side = players.filter(p => p !== mp).map(p => p.tile);
+  if (side.some((t, i) => sideSlot.children[i] !== t) || sideSlot.children.length !== side.length){
+    side.forEach(t => sideSlot.appendChild(t)); moved = true;
+  }
+  if (moved) requestAnimationFrame(() => syncAll(true));
+  stage.classList.toggle('solo', n === 1);
+  stage.hidden = !n; $('#tracks').hidden = !n; $('#transport').hidden = !n;
+  $('#empty').hidden = !!n;
+  $('#trackNote').textContent = n ? `${n}개 영상` : '';
+}
+
+/* ---------- sync ---------- */
+function setOffset(p, val, noSeek){
+  p.offset = Math.round(val * 100) / 100;
+  p.offEl.value = p.offset.toFixed(2);
+  if (!noSeek) syncOne(p, true);
+}
+
+function syncOne(p, force){
+  const v = p.video;
+  if (p.failed || v.readyState < 1 || !(p.dur > 0)) return;
+  const t = mt() + p.offset;
+  const run = playing && !stalled;
+  let st = '';
+  if (t < 0){
+    if (!v.paused) v.pause();
+    if (v.currentTime > 0.05) v.currentTime = 0;
+    st = `${fmt(-t)} 뒤 시작`;
+  } else if (t >= p.dur - 0.05){
+    if (!v.paused) v.pause();
+    if (Math.abs(v.currentTime - p.dur) > 0.3) v.currentTime = Math.max(0, p.dur - 0.05);
+    st = '끝';
+  } else {
+    const d = v.currentTime - t;
+    if (run){
+      if (Math.abs(d) > 0.35 || (force && Math.abs(d) > 0.05)){ v.currentTime = t; v.playbackRate = 1; }
+      else if (Math.abs(d) > 0.06){ v.playbackRate = d > 0 ? 0.96 : 1.04; }
+      else v.playbackRate = 1;
+      if (v.paused) v.play().catch(() => {});
+    } else {
+      if (!v.paused) v.pause();
+      v.playbackRate = 1;
+      if (Math.abs(d) > 0.03 || force) v.currentTime = t;
+      if (stalled && v.readyState < 3) st = '버퍼링';
+    }
+  }
+  p.statusEl.textContent = st;
+}
+function syncAll(force){ players.forEach(p => syncOne(p, force)); }
+
+function checkStall(){
+  if (!playing){ stalled = false; return; }
+  const t = mt();
+  const blocking = players.some(p => {
+    if (p.failed || !(p.dur > 0)) return false;
+    const vt = t + p.offset;
+    return vt >= 0 && vt < p.dur - 0.1 && p.video.readyState < 3;
+  });
+  if (blocking && !stalled){ baseT = mt(); stalled = true; syncAll(true); }
+  else if (!blocking && stalled){ baseNow = now(); stalled = false; syncAll(true); }
+}
+
+function applyVol(p){
+  if (p.gain){
+    p.video.volume = 1; p.video.muted = false;
+    p.gain.gain.value = p.muted ? 0 : p.vol;
+    audio.monitor.gain.value = masterMuted ? 0 : masterVol;
+  } else {
+    p.video.volume = Math.min(1, p.vol * masterVol);
+    p.video.muted = p.muted || masterMuted;
+  }
+  p.muteEl.textContent = p.muted ? '🔇' : '🔊';
+  p.muteEl.classList.toggle('on', p.muted);
+}
+
+/* ---------- transport ---------- */
+function play(){
+  if (!players.length) return;
+  const { lo, hi } = span();
+  if (hi <= lo){ toast('재생할 수 있는 영상이 아직 없어요.'); return; }
+  if (mt() >= hi - 0.05 || mt() < lo) baseT = lo;
+  setSyncMode(false);
+  baseNow = now(); playing = true; stalled = false;
+  syncAll(true); updatePlayBtn(); syncRecorder();
+}
+function pause(){
+  baseT = mt(); playing = false; stalled = false;
+  syncAll(true); updatePlayBtn(); syncRecorder();
+}
+const toggle = () => playing ? pause() : play();
+function seekTo(t){
+  const { lo, hi } = span();
+  setMT(Math.min(Math.max(t, lo), hi));
+  syncAll(true);
+}
+function updatePlayBtn(){
+  playBtn.innerHTML = playing ? ICON_PAUSE : ICON_PLAY;
+  playBtn.setAttribute('aria-label', playing ? '일시정지' : '재생');
+}
+function setSyncMode(on){
+  syncMode = on;
+  document.body.classList.toggle('syncing', on);
+  $('#syncBtn').classList.toggle('on', on);
+  $('#syncBtn').textContent = on ? '싱크 맞추기 끝내기' : '싱크 맞추기';
+  if (on && playing) pause();
+}
+
+playBtn.addEventListener('click', toggle);
+document.querySelectorAll('[data-skip]').forEach(b => b.addEventListener('click', () => seekTo(mt() + parseFloat(b.dataset.skip))));
+seek.addEventListener('pointerdown', () => seeking = true);
+window.addEventListener('pointerup', () => seeking = false);
+seek.addEventListener('input', () => seekTo(span().lo + parseFloat(seek.value)));
+$('#mvol').addEventListener('input', e => { masterVol = e.target.value / 100; players.forEach(applyVol); });
+$('#mmute').addEventListener('click', e => {
+  masterMuted = !masterMuted; e.currentTarget.textContent = masterMuted ? '🔇' : '🔊';
+  e.currentTarget.classList.toggle('on', masterMuted); players.forEach(applyVol);
+});
+$('#syncBtn').addEventListener('click', () => setSyncMode(!syncMode));
+
+/* ---------- add dialog ---------- */
+function openAdd(){ if (!dlg.open) dlg.showModal(); setTimeout(() => $('#url').focus(), 30); }
+$('#openAdd').addEventListener('click', openAdd);
+$('#emptyAdd').addEventListener('click', openAdd);
+$('#closeAdd').addEventListener('click', () => dlg.close());
+dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+
+function addUrl(){
+  const inp = $('#url'); const u = inp.value.trim(); if (!u) return;
+  let url;
+  try { url = new URL(u); } catch { toast('주소 형식이 올바르지 않아요. https:// 로 시작하는지 확인하세요.'); return; }
+  if (/(^|\.)chzzk\.naver\.com$/i.test(url.hostname)){
+    $('#chzzkHelp').open = true;
+    toast('치지직 페이지 주소는 재생할 수 없어요. 다시보기의 m3u8 주소를 넣어 주세요.');
+    return;
+  }
+  if (/youtu\.?be|youtube\.com/i.test(url.hostname)){ toast('유튜브 주소는 지원하지 않아요.'); return; }
+  const kind = kindOf(u, false);
+  const last = decodeURIComponent(url.pathname.split('/').pop() || '');
+  let name;
+  if (kind === 'hls' || kind === 'dash' || !last){
+    name = `${/naver|pstatic|chzzk/i.test(url.hostname) ? '치지직 다시보기' : '스트림'} ${players.length + 1}`;
+  } else name = last;
+  addSource(u, name, false);
+  inp.value = '';
+  toast(`"${name}"을 추가했어요.`);
+}
+$('#addUrl').addEventListener('click', addUrl);
+$('#url').addEventListener('keydown', e => { if (e.key === 'Enter') addUrl(); });
+$('#pick').addEventListener('click', () => $('#file').click());
+$('#file').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
+function addFiles(files){
+  let added = 0;
+  for (const f of files){
+    if (!/^(video|audio)\//.test(f.type) && !/\.(mp4|webm|mov|mkv|m4v|ogv|mp3|m4a|wav)$/i.test(f.name)){ toast(`"${f.name}"은 영상 파일이 아니에요.`); continue; }
+    addSource(URL.createObjectURL(f), f.name, true); added++;
+  }
+  if (added){ if (dlg.open) dlg.close(); if (location.hash !== '#/watch') location.hash = '#/watch'; }
+}
+['dragenter','dragover'].forEach(ev => window.addEventListener(ev, e => { e.preventDefault(); document.body.classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => window.addEventListener(ev, e => {
+  e.preventDefault();
+  if (ev === 'dragleave' && e.relatedTarget) return;
+  document.body.classList.remove('drag');
+  if (ev === 'drop' && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+}));
+
+/* ---------- saved sets ---------- */
+function readSets(){ try { return JSON.parse(localStorage.getItem(SETS_KEY)) || []; } catch { return []; } }
+function writeSets(s){ try { localStorage.setItem(SETS_KEY, JSON.stringify(s)); return true; } catch { return false; } }
+$('#saveSet').addEventListener('click', () => {
+  const urlTracks = players.filter(p => !p.isFile);
+  if (!urlTracks.length){ toast('내 파일은 세트에 저장되지 않아요. 주소로 넣은 영상이 있어야 저장할 수 있어요.'); return; }
+  const title = prompt('세트 이름', urlTracks.map(p => p.name).slice(0, 2).join(' + '));
+  if (!title || !title.trim()) return;
+  const mainIdx = Math.max(0, urlTracks.findIndex(p => p.id === mainId));
+  const set = { id: Date.now().toString(36), title: title.trim(), savedAt: Date.now(), main: mainIdx,
+    tracks: urlTracks.map(p => ({ src: p.src, name: p.name, offset: p.offset, vol: p.vol, muted: p.muted, rect: p.rect, show: p.show })),
+    rec: { W: rec.W, H: rec.H, layout: rec.layout, fit: rec.fit, labels: rec.labels, bg: rec.bg, custom: rec.custom } };
+  const sets = readSets(); sets.unshift(set);
+  if (writeSets(sets.slice(0, 30))){
+    toast(players.some(p => p.isFile) ? '세트를 저장했어요. 내 파일로 넣은 영상은 빠졌어요.' : '세트를 저장했어요.');
+  } else toast('이 브라우저에서는 저장할 수 없어요.');
+  renderSets();
+});
+function openSet(id){
+  const set = readSets().find(s => s.id === id); if (!set) return;
+  if (players.length && !confirm('지금 화면의 영상을 모두 닫고 세트를 불러올까요?')) return;
+  if (rec.recorder){ toast('녹화 중에는 세트를 불러올 수 없어요.'); return; }
+  pause(); clearAll(); setMT(0);
+  if (set.rec){ Object.assign(rec, { layout: set.rec.layout, fit: set.rec.fit, labels: set.rec.labels, bg: set.rec.bg }); setRes(set.rec.W, set.rec.H, true); }
+  const made = set.tracks.map(t => addSource(t.src, t.name, false, t));
+  if (made[set.main]) setMain(made[set.main].id);
+  rec.custom = !!(set.rec && set.rec.custom && made.every(p => p.rect));
+  syncRecControls();
+  location.hash = '#/watch';
+}
+function renderSets(){
+  const sets = readSets(), box = $('#sets');
+  if (!sets.length){ box.innerHTML = '<div class="muted-box">저장한 세트가 없어요. 시청 화면에서 영상 조합과 싱크를 맞춘 뒤 세트로 저장하면 여기에 나타납니다.</div>'; return; }
+  box.innerHTML = sets.map(s => `
+    <div class="set">
+      <div class="set-info">
+        <div class="set-title">${esc(s.title)}</div>
+        <div class="set-meta">영상 ${s.tracks.length}개, ${new Date(s.savedAt).toLocaleDateString('ko-KR')} 저장</div>
+      </div>
+      <button class="link-del" data-del="${s.id}">삭제</button>
+      <button class="tbtn primary" data-open="${s.id}">불러오기</button>
+    </div>`).join('');
+}
+$('#sets').addEventListener('click', e => {
+  const o = e.target.closest('[data-open]'), d = e.target.closest('[data-del]');
+  if (o) openSet(o.dataset.open);
+  if (d && confirm('이 세트를 삭제할까요?')){ writeSets(readSets().filter(s => s.id !== d.dataset.del)); renderSets(); }
+});
+
+/* ---------- recording: layout ---------- */
+const byId = id => players.find(p => p.id === id);
+function setRes(W, H, keepLayout){
+  rec.W = W; rec.H = H;
+  recCanvas.width = W; recCanvas.height = H;
+  const ps = Math.min(1, 1280 / Math.max(W, H));
+  preview.width = Math.round(W * ps); preview.height = Math.round(H * ps);
+  if (!keepLayout && rec.on) applyLayout(rec.layout);
+  syncRecControls();
+}
+function orderedVisible(){
+  const mp = byId(mainId);
+  const list = players.filter(p => p.show);
+  if (mp && mp.show){ list.splice(list.indexOf(mp), 1); list.unshift(mp); }
+  return list;
+}
+function applyLayout(name){
+  rec.layout = name; rec.custom = false;
+  const W = rec.W, H = rec.H, g = Math.round(Math.min(W, H) * 0.008);
+  const list = orderedVisible(), n = list.length, k = n - 1, tall = H > W;
+  const R = [];
+  if (n === 1 || (k === 0)){ if (n) R.push([0, 0, W, H]); }
+  else if (name === 'side'){
+    const sw = Math.round(W * (tall ? 0.36 : 0.25));
+    R.push([0, 0, W - sw - g, H]);
+    const sh = Math.min((H - (k - 1) * g) / k, sw * 9 / 16), tot = k * sh + (k - 1) * g, y0 = (H - tot) / 2;
+    for (let i = 0; i < k; i++) R.push([W - sw, y0 + i * (sh + g), sw, sh]);
+  } else if (name === 'bottom'){
+    const bw = (W - (k - 1) * g) / k, bh = Math.min(H * (tall ? 0.4 : 0.3), bw * 9 / 16);
+    R.push([0, 0, W, H - bh - g]);
+    for (let i = 0; i < k; i++) R.push([i * (bw + g), H - bh, bw, bh]);
+  } else if (name === 'grid'){
+    let cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
+    if (tall){ rows = Math.ceil(Math.sqrt(n)); cols = Math.ceil(n / rows); }
+    const cw = (W - (cols - 1) * g) / cols, ch = (H - (rows - 1) * g) / rows;
+    for (let i = 0; i < n; i++) R.push([(i % cols) * (cw + g), Math.floor(i / cols) * (ch + g), cw, ch]);
+  } else { // pip
+    R.push([0, 0, W, H]);
+    const pw = Math.round(W * (tall ? 0.42 : 0.26)), ph = pw * 9 / 16, m = Math.round(Math.min(W, H) * 0.03);
+    const per = Math.max(1, Math.floor((H - m) / (ph + m)));
+    for (let i = 0; i < k; i++){
+      const col = Math.floor(i / per), row = i % per;
+      R.push([W - m - pw - col * (pw + m), H - m - ph - row * (ph + m), pw, ph]);
+    }
+  }
+  list.forEach((p, i) => { const r = R[i]; p.rect = { x: r[0] / W, y: r[1] / H, w: r[2] / W, h: r[3] / H }; });
+  rec.z = [...list.map(p => p.id), ...players.filter(p => !p.show).map(p => p.id)];
+  syncRecControls();
+}
+function onRecPlayersChanged(added){
+  if (!rec.custom){ applyLayout(rec.layout); }
+  else if (added && !added.rect){ added.rect = { x: 0.35, y: 0.35, w: 0.3, h: 0.3 * (rec.W / rec.H) * 9 / 16 }; rec.z = rec.z.filter(z => z !== added.id).concat(added.id); }
+  renderRecList();
+}
+const px = r => ({ x: r.x * rec.W, y: r.y * rec.H, w: r.w * rec.W, h: r.h * rec.H });
+
+function drawComposite(){
+  const W = rec.W, H = rec.H;
+  rctx.fillStyle = rec.bg; rctx.fillRect(0, 0, W, H);
+  const fs = Math.round(Math.min(W, H) * 0.026);
+  for (const id of rec.z){
+    const p = byId(id); if (!p || !p.show || !p.rect) continue;
+    const r = px(p.rect), v = p.video;
+    rctx.save();
+    rctx.beginPath(); rctx.rect(r.x, r.y, r.w, r.h); rctx.clip();
+    rctx.fillStyle = '#000'; rctx.fillRect(r.x, r.y, r.w, r.h);
+    if (!p.tainted && v.readyState >= 2 && v.videoWidth){
+      const vr = v.videoWidth / v.videoHeight, rr = r.w / r.h;
+      let dw, dh;
+      if ((rec.fit === 'contain') === (vr > rr)){ dw = r.w; dh = r.w / vr; } else { dh = r.h; dw = r.h * vr; }
+      rctx.drawImage(v, r.x + (r.w - dw) / 2, r.y + (r.h - dh) / 2, dw, dh);
+    } else {
+      rctx.fillStyle = '#8A91A0'; rctx.font = `500 ${fs}px "IBM Plex Sans KR", sans-serif`;
+      rctx.textAlign = 'center'; rctx.textBaseline = 'middle';
+      rctx.fillText(p.tainted ? '녹화할 수 없는 영상' : '불러오는 중', r.x + r.w / 2, r.y + r.h / 2);
+    }
+    if (rec.labels){
+      rctx.font = `600 ${fs}px "IBM Plex Sans KR", sans-serif`; rctx.textAlign = 'left'; rctx.textBaseline = 'middle';
+      const pad = fs * 0.5, tw = rctx.measureText(p.name).width, bh = fs * 1.7;
+      const bx = r.x + fs * 0.6, by = r.y + r.h - bh - fs * 0.6;
+      rctx.fillStyle = 'rgba(0,0,0,.6)';
+      rctx.beginPath(); rctx.roundRect ? rctx.roundRect(bx, by, tw + pad * 2, bh, fs * 0.4) : rctx.rect(bx, by, tw + pad * 2, bh); rctx.fill();
+      rctx.fillStyle = '#fff'; rctx.fillText(p.name, bx + pad, by + bh / 2);
+    }
+    rctx.restore();
+  }
+}
+function drawPreview(){
+  const s = preview.width / rec.W;
+  pctx.drawImage(recCanvas, 0, 0, preview.width, preview.height);
+  for (const id of rec.z){
+    const p = byId(id); if (!p || !p.show || !p.rect) continue;
+    const r = px(p.rect), sel = rec.sel === id;
+    pctx.save();
+    pctx.strokeStyle = p.color; pctx.lineWidth = sel ? 3 : 1.5; pctx.globalAlpha = sel ? 1 : 0.7;
+    if (!sel) pctx.setLineDash([6, 4]);
+    pctx.strokeRect(r.x * s + 0.75, r.y * s + 0.75, r.w * s - 1.5, r.h * s - 1.5);
+    if (sel){
+      const hs = 14; pctx.setLineDash([]); pctx.fillStyle = p.color;
+      pctx.fillRect((r.x + r.w) * s - hs, (r.y + r.h) * s - hs, hs, hs);
+    }
+    pctx.restore();
+  }
+}
+
+/* drag & resize on preview */
+let drag = null;
+function toCanvas(e){
+  const b = preview.getBoundingClientRect();
+  return { x: (e.clientX - b.left) / b.width * rec.W, y: (e.clientY - b.top) / b.height * rec.H, k: rec.W / b.width };
+}
+function hitTest(pt){
+  for (let i = rec.z.length - 1; i >= 0; i--){
+    const p = byId(rec.z[i]); if (!p || !p.show || !p.rect) continue;
+    const r = px(p.rect), hs = 22 * pt.k;
+    const inHandle = pt.x >= r.x + r.w - hs && pt.x <= r.x + r.w + hs * 0.4 && pt.y >= r.y + r.h - hs && pt.y <= r.y + r.h + hs * 0.4;
+    if (inHandle) return { p, mode: 'resize' };
+    if (pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h) return { p, mode: 'move' };
+  }
+  return null;
+}
+function snapBox(pos, size, targets, th){
+  let best = 0, bd = th;
+  for (const edge of [pos, pos + size, pos + size / 2])
+    for (const t of targets){ const d = t - edge; if (Math.abs(d) < bd){ bd = Math.abs(d); best = d; } }
+  return pos + best;
+}
+function snap(v, targets, th){
+  let best = v, bd = th;
+  for (const t of targets){ const d = Math.abs(v - t); if (d < bd){ bd = d; best = t; } }
+  return best;
+}
+preview.addEventListener('pointerdown', e => {
+  const pt = toCanvas(e), h = hitTest(pt);
+  if (!h){ rec.sel = null; renderRecList(); return; }
+  rec.sel = h.p.id; rec.custom = true;
+  drag = { p: h.p, mode: h.mode, sx: pt.x, sy: pt.y, r: px(h.p.rect) };
+  preview.setPointerCapture(e.pointerId);
+  renderRecList();
+});
+preview.addEventListener('pointermove', e => {
+  const pt = toCanvas(e);
+  if (!drag){
+    const h = hitTest(pt);
+    preview.style.cursor = !h ? 'default' : h.mode === 'resize' ? 'nwse-resize' : 'move';
+    return;
+  }
+  const W = rec.W, H = rec.H, th = 10 * pt.k, r0 = drag.r, dx = pt.x - drag.sx, dy = pt.y - drag.sy;
+  const others = players.filter(o => o !== drag.p && o.show && o.rect).map(o => px(o.rect));
+  const xs = [0, W, W / 2, ...others.flatMap(o => [o.x, o.x + o.w])];
+  const ys = [0, H, H / 2, ...others.flatMap(o => [o.y, o.y + o.h])];
+  let { x, y, w, h } = r0;
+  if (drag.mode === 'move'){
+    x = r0.x + dx; y = r0.y + dy;
+    x = snapBox(x, w, xs, th); y = snapBox(y, h, ys, th);
+    if (w <= W) x = Math.min(Math.max(x, 0), W - w);
+    if (h <= H) y = Math.min(Math.max(y, 0), H - h);
+  } else {
+    const minS = Math.min(W, H) * 0.08;
+    const v = drag.p.video, ar = (v.videoWidth && v.videoHeight) ? v.videoWidth / v.videoHeight : 16 / 9;
+    w = Math.max(minS, r0.w + dx);
+    w = snap(r0.x + w, xs, th) - r0.x;
+    if (e.shiftKey){ h = Math.max(minS, r0.h + dy); h = snap(r0.y + h, ys, th) - r0.y; }
+    else h = w / ar;
+    w = Math.min(w, W * 2); h = Math.min(h, H * 2);
+  }
+  drag.p.rect = { x: x / W, y: y / H, w: w / W, h: h / H };
+});
+const endDrag = () => { drag = null; };
+preview.addEventListener('pointerup', endDrag);
+preview.addEventListener('pointercancel', endDrag);
+
+/* controls */
+function renderRecList(){
+  const box = $('#recList'); if (!box) return;
+  box.innerHTML = '';
+  players.forEach((p, i) => {
+    const row = document.createElement('div');
+    row.className = 'rl-row' + (rec.sel === p.id ? ' sel' : '');
+    row.innerHTML = `<input type="checkbox" ${p.show ? 'checked' : ''} aria-label="녹화에 포함"><i class="dot" style="--c:${p.color}"></i><span class="nm"></span><button class="ib" title="맨 앞으로">맨 앞</button>`;
+    row.querySelector('.nm').textContent = `${i + 1}. ${p.name}`;
+    row.querySelector('input').addEventListener('change', e => {
+      p.show = e.target.checked;
+      if (p.show && !p.rect) p.rect = { x: 0.35, y: 0.35, w: 0.3, h: 0.3 * (rec.W / rec.H) * 9 / 16 };
+      if (!rec.custom) applyLayout(rec.layout);
+    });
+    row.querySelector('button').addEventListener('click', e => {
+      e.stopPropagation(); rec.z = rec.z.filter(z => z !== p.id).concat(p.id); rec.sel = p.id; renderRecList();
+    });
+    row.addEventListener('click', e => { if (e.target.tagName !== 'INPUT'){ rec.sel = p.id; renderRecList(); } });
+    box.appendChild(row);
+  });
+}
+function syncRecControls(){
+  document.querySelectorAll('#resSeg button').forEach(b => b.classList.toggle('on', b.dataset.res === `${rec.W}x${rec.H}`));
+  document.querySelectorAll('#layoutSeg button').forEach(b => b.classList.toggle('on', !rec.custom && b.dataset.layout === rec.layout));
+  document.querySelectorAll('#fitSeg button').forEach(b => b.classList.toggle('on', b.dataset.fit === rec.fit));
+  document.querySelectorAll('#fromSeg button').forEach(b => b.classList.toggle('on', b.dataset.from === rec.from));
+  $('#optLabels').checked = rec.labels; $('#optBg').value = rec.bg;
+  renderRecList();
+}
+$('#resSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; const [W, H] = b.dataset.res.split('x').map(Number); setRes(W, H); });
+$('#layoutSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) applyLayout(b.dataset.layout); });
+$('#fitSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b){ rec.fit = b.dataset.fit; syncRecControls(); } });
+$('#fromSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (b){ rec.from = b.dataset.from; syncRecControls(); } });
+$('#optLabels').addEventListener('change', e => rec.labels = e.target.checked);
+$('#optBg').addEventListener('input', e => rec.bg = e.target.value);
+
+function setRecMode(on){
+  if (!on && rec.recorder){ toast('녹화 중에는 닫을 수 없어요. 먼저 녹화를 끝내 주세요.'); return; }
+  if (on && !players.length){ toast('먼저 영상을 추가해 주세요.'); return; }
+  rec.on = on;
+  $('#recMode').hidden = !on;
+  stage.classList.toggle('offstage', on);
+  $('#recBtn').classList.toggle('on', on);
+  $('#recBtn').textContent = on ? '녹화 화면 닫기' : '● 녹화';
+  if (on){
+    if (!rec.custom || players.some(p => p.show && !p.rect)) applyLayout(rec.layout);
+    syncRecControls();
+  } else requestAnimationFrame(() => syncAll(true));
+}
+$('#recBtn').addEventListener('click', () => setRecMode(!rec.on));
+
+/* ---------- recording: capture ---------- */
+function ensureAudio(){
+  if (audio) return audio;
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return null;
+  const ctx = new Ctx(), dest = ctx.createMediaStreamDestination(), monitor = ctx.createGain();
+  monitor.connect(ctx.destination);
+  audio = { ctx, dest, monitor };
+  players.forEach(p => { hookAudio(p); applyVol(p); });
+  return audio;
+}
+function hookAudio(p){
+  if (!audio || p.srcNode) return;
+  try {
+    p.srcNode = audio.ctx.createMediaElementSource(p.video);
+    p.gain = audio.ctx.createGain();
+    p.srcNode.connect(p.gain); p.gain.connect(audio.monitor); p.gain.connect(audio.dest);
+  } catch {}
+}
+function pickMime(){
+  const c = [
+    ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'mp4'], ['video/mp4;codecs=avc1,mp4a.40.2', 'mp4'], ['video/mp4', 'mp4'],
+    ['video/webm;codecs=vp9,opus', 'webm'], ['video/webm;codecs=vp8,opus', 'webm'], ['video/webm', 'webm'],
+  ];
+  for (const [type, ext] of c) if (MediaRecorder.isTypeSupported(type)) return { type, ext };
+  return { type: '', ext: 'webm' };
+}
+function syncRecorder(){
+  const r = rec.recorder; if (!r || r.state === 'inactive') return;
+  const want = playing && !stalled;
+  try {
+    if (want && r.state === 'paused') r.resume();
+    else if (!want && r.state === 'recording') r.pause();
+  } catch {}
+}
+function updateRecUI(){
+  const on = !!rec.recorder;
+  $('#recGo').textContent = on ? '■ 녹화 끝내기' : '● 녹화 시작';
+  $('#recGo').classList.toggle('stop', on);
+  $('#recBadge').hidden = !on;
+  $('#recBtn').disabled = on;
+}
+async function startRecording(){
+  if (!players.some(p => p.show && p.rect && !p.failed)){ toast('녹화할 영상을 하나 이상 체크해 주세요.'); return; }
+  if (!window.MediaRecorder || !recCanvas.captureStream){ toast('이 브라우저는 녹화를 지원하지 않아요. PC의 크롬이나 엣지를 써 주세요.'); return; }
+  const tainted = players.filter(p => p.show && p.tainted);
+  if (tainted.length) toast(`"${tainted[0].name}"은 서버 정책 때문에 녹화에 담을 수 없어 빈 화면으로 들어가요.`);
+  const a = ensureAudio();
+  if (a) try { await a.ctx.resume(); } catch {}
+  if (rec.from === 'start'){ if (playing) pause(); seekTo(span().lo); }
+  drawComposite();
+  let stream;
+  try { stream = recCanvas.captureStream(30); }
+  catch { toast('녹화를 시작할 수 없어요. 녹화할 수 없는 영상이 섞여 있는지 확인하세요.'); return; }
+  if (a) a.dest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+  const mime = pickMime();
+  const bps = rec.W * rec.H >= 1900 * 1000 ? 10_000_000 : 6_000_000;
+  let r;
+  try { r = new MediaRecorder(stream, { ...(mime.type ? { mimeType: mime.type } : {}), videoBitsPerSecond: bps, audioBitsPerSecond: 192_000 }); }
+  catch { toast('녹화를 시작할 수 없어요. 브라우저를 최신 버전으로 업데이트해 보세요.'); return; }
+  rec.chunks = []; rec.active = 0; rec.mime = mime; rec.recorder = r;
+  r.ondataavailable = e => { if (e.data && e.data.size) rec.chunks.push(e.data); };
+  r.onstop = finishRecording;
+  r.start(1000);
+  try { r.pause(); } catch {}
+  updateRecUI();
+  if (!playing) play(); else syncRecorder();
+}
+function stopRecording(){
+  const r = rec.recorder; if (!r) return;
+  if (playing) pause();
+  if (r.state !== 'inactive') r.stop();
+}
+function finishRecording(){
+  const r = rec.recorder; rec.recorder = null;
+  if (r && r.stream) r.stream.getVideoTracks().forEach(t => t.stop());
+  updateRecUI();
+  if (!rec.chunks.length || rec.active < 0.3){ toast('녹화된 내용이 없어요.'); return; }
+  rec.blob = new Blob(rec.chunks, { type: rec.mime.type ? rec.mime.type.split(';')[0] : 'video/webm' });
+  rec.chunks = [];
+  if (rec.blobUrl) URL.revokeObjectURL(rec.blobUrl);
+  rec.blobUrl = URL.createObjectURL(rec.blob); rec.saved = false;
+  $('#resVideo').src = rec.blobUrl;
+  $('#resMeta').textContent = `${rec.W}×${rec.H} · ${fmt(rec.active)} · ${(rec.blob.size / 1048576).toFixed(1)}MB · ${rec.mime.ext.toUpperCase()}`;
+  $('#resDlg').showModal();
+}
+$('#recGo').addEventListener('click', () => rec.recorder ? stopRecording() : startRecording());
+
+async function saveBlob(blob, filename){
+  if (dlCap){
+    try { await dlCap.save({ filename, data: blob }); rec.saved = true; toast('저장했어요.'); }
+    catch (e){ if (!e || e.code !== 'declined') toast('여기서는 저장할 수 없어요.'); }
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = rec.blobUrl; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  rec.saved = true;
+}
+$('#resSave').addEventListener('click', () => {
+  if (!rec.blob) return;
+  const d = new Date(), z = n => String(n).padStart(2, '0');
+  saveBlob(rec.blob, `싱크뷰_${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.${rec.mime.ext}`);
+});
+$('#resClose').addEventListener('click', () => {
+  if (!rec.saved && !confirm('다운로드하지 않은 녹화본은 사라져요. 닫을까요?')) return;
+  $('#resDlg').close();
+});
+$('#resDlg').addEventListener('close', () => {
+  $('#resVideo').pause(); $('#resVideo').removeAttribute('src'); $('#resVideo').load();
+  if (rec.blobUrl){ URL.revokeObjectURL(rec.blobUrl); rec.blobUrl = null; }
+  rec.blob = null;
+});
+$('#resDlg').addEventListener('cancel', e => { if (!rec.saved && !confirm('다운로드하지 않은 녹화본은 사라져요. 닫을까요?')) e.preventDefault(); });
+
+/* ---------- routing ---------- */
+function route(){
+  const watch = location.hash === '#/watch';
+  $('#home').hidden = watch; $('#watch').hidden = !watch;
+  $('#watchActions').hidden = !watch; $('#goWatch').hidden = watch;
+  if (!watch){ if (rec.recorder) stopRecording(); if (playing) pause(); renderSets(); }
+  window.scrollTo(0, 0);
+}
+window.addEventListener('hashchange', route);
+
+/* ---------- keys ---------- */
+window.addEventListener('keydown', e => {
+  if (location.hash !== '#/watch' || dlg.open || $('#resDlg').open) return;
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' && e.target.type !== 'range') return;
+  if (e.code === 'Space'){ e.preventDefault(); toggle(); }
+  else if (e.code === 'ArrowRight' && tag !== 'input') seekTo(mt() + 5);
+  else if (e.code === 'ArrowLeft' && tag !== 'input') seekTo(mt() - 5);
+  else if (e.code === 'KeyS') setSyncMode(!syncMode);
+  else if (/^Digit[1-9]$/.test(e.code)){ const p = players[+e.code.slice(5) - 1]; if (p) setMain(p.id); }
+});
+
+/* ---------- loops ---------- */
+setInterval(() => { if (players.length){ checkStall(); syncAll(false); syncRecorder(); } }, 200);
+let lastTick = now();
+function tick(){
+  const tn = now(), dt = (tn - lastTick) / 1000; lastTick = tn;
+  if (rec.recorder && rec.recorder.state === 'recording'){ rec.active += dt; $('#recTime').textContent = fmt(rec.active); }
+  if (rec.on){ drawComposite(); drawPreview(); }
+  if (players.length){
+    const { lo, hi } = span(); const len = Math.max(0, hi - lo); const t = mt();
+    if (playing && t >= hi && len > 0){ setMT(hi); pause(); if (rec.recorder) stopRecording(); }
+    $('#cur').textContent = fmt(t - lo); $('#tot').textContent = fmt(len);
+    seek.max = len;
+    if (!seeking) seek.value = Math.min(len, Math.max(0, t - lo));
+    const headPct = len > 0 ? ((t - lo) / len * 100) : 0;
+    for (const p of players){
+      if (len > 0 && p.dur > 0){
+        p.bar.style.left = ((-p.offset - lo) / len * 100) + '%';
+        p.bar.style.width = (p.dur / len * 100) + '%';
+      } else p.bar.style.width = '0';
+      p.headEl.style.left = headPct + '%';
+      if (syncMode && document.activeElement !== p.scrubEl) p.scrubEl.value = p.video.currentTime;
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
+updatePlayBtn(); setRes(1920, 1080, true); layout(); route();
+requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
